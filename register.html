@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cafeteria Compass</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <style>
+        /* Chatbot Styles */
+        .chat-btn-float {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 60px;
+            height: 60px;
+            background: var(--accent-teal, #008080);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            border: none;
+            transition: transform 0.2s;
+        }
+
+        .chat-btn-float:hover {
+            transform: scale(1.1);
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            background: #f9f9f9;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 0.8rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--accent-teal, #008080);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+            background: #e0e0e0;
+            color: #333;
+            border-bottom-left-radius: 2px;
+        }
+
+        .chat-input-area {
+            padding: 1rem;
+            border-top: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            /* Stack them */
+            gap: 0.5rem;
+            background: white;
+        }
+
+        .chat-input-row {
+            display: flex;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 0.8rem;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+        }
+
+        .chat-input-area button {
+            background: var(--accent-teal, #008080);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="logo">
+            <h1>Cafeteria Compass</h1>
+            <p>Pointing you towards healthier choices!</p>
+        </div>
+
+        {% if session.get('user_id') %}
+        <div class="search-bar">
+            <!-- Search is technically part of menu, but if we want it global -->
+            <!-- For now, we keep it simple or remove if only on menu -->
+            <!-- Based on design, search is in header -->
+            <form action="{{ url_for('menu') }}" method="get">
+                <input type="text" name="q" placeholder="Search for food..." />
+            </form>
+        </div>
+
+        <nav class="nav-links">
+            {% if session.get('role') == 'Parent' %}
+            <a href="{{ url_for('order_history') }}" class="btn-nav">Orders</a>
+            {% else %}
+            <a href="{{ url_for('order_history') }}" class="btn-nav">Orders</a>
+            <a href="{{ url_for('cart') }}" class="cart-icon">
+                <i class="fas fa-shopping-cart"></i>
+                <span class="cart-count">0</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+        </nav>
+        {% endif %}
+    </header>
+
+    <div class="flash-messages">
+        {% with messages = get_flashed_messages(with_categories=true) %} {% if
+        messages %} {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %} {% endif %} {% endwith %}
+    </div>
+
+    {% block content %}{% endblock %}
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <!-- Cart Sidebar -->
+    <div class="cart-overlay" id="cartOverlay"></div>
+    <div class="cart-sidebar" id="cartSidebar">
+        <div class="cart-header">
+            <h3>Your Order</h3>
+            <button class="close-cart" onclick="toggleCart()">×</button>
+        </div>
+        <div class="cart-body" id="cartItemsContainer">
+            <p class="empty-msg">Your cart is empty</p>
+        </div>
+        <div class="cart-footer">
+            <div class="cart-total">
+                <span>Total:</span>
+                <span id="cartTotalDisplay">₹0</span>
+            </div>
+            <div class="cart-actions">
+                <button class="btn-checkout" onclick="checkout('Place Order')">
+                    Checkout
+                </button>
+                <button class="btn-vend" onclick="checkout('Vend Receipt')">
+                    Vend Receipt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Orders Sidebar -->
+    <div class="cart-sidebar" id="ordersSidebar">
+        <div class="cart-header">
+            <h3>Order History</h3>
+            <button class="close-cart" onclick="toggleOrders()">×</button>
+        </div>
+        <div class="cart-body" id="ordersContainer">
+            <p class="empty-msg">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Reviews Sidebar -->
+    <div class="cart-sidebar" id="reviewsSidebar">
+        <div class="cart-header">
+            <h3>Customer Reviews</h3>
+            <button class="close-cart" onclick="toggleReviews()">×</button>
+        </div>
+        <div class="cart-body" id="reviewsContainer">
+            <p class="empty-msg">Loading reviews...</p>
+        </div>
+        <div class="cart-footer">
+            <h4 style="margin: 0 0 0.5rem 0">Add Review</h4>
+            <div class="review-form" style="display: flex; flex-direction: column; gap: 0.5rem">
+                <select id="reviewRating" style="padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px">
+                    <option value="5">⭐⭐⭐⭐⭐ (5/5)</option>
+                    <option value="4">⭐⭐⭐⭐ (4/5)</option>
+                    <option value="3">⭐⭐⭐ (3/5)</option>
+                    <option value="2">⭐⭐ (2/5)</option>
+                    <option value="1">⭐ (1/5)</option>
+                </select>
+                <textarea id="reviewComment" placeholder="Write your feedback..." rows="2" style="
+              padding: 0.5rem;
+              border: 1px solid #ddd;
+              border-radius: 4px;
+              resize: none;
+            "></textarea>
+                <button onclick="submitReview()" style="
+              background: var(--accent-teal);
+              color: white;
+              border: none;
+              padding: 0.5rem;
+              border-radius: 4px;
+              cursor: pointer;
+            ">
+                    Post Review
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Bot Sidebar -->
+    <div class="cart-sidebar" id="chatSidebar">
+        <div class="cart-header">
+            <h3>Canteen AI</h3>
+            <button class="close-cart" onclick="toggleChat()">×</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot">
+                Hello! I'm your Canteen Assistant. Tell me your weekly budget and I'll
+                suggest meal plan with health scores! 🍔
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="number" id="chatBudget" placeholder="Weekly Budget (₹)" />
+            <div class="chat-input-row">
+                <input type="text" id="chatInput" placeholder="Ask for suggestions..."
+                    onkeypress="handleChatKey(event)" />
+                <button onclick="sendChatMessage()">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <button class="chat-btn-float" onclick="toggleChat()">
+        <i class="fas fa-robot"></i>
+    </button>
+
+    <script>
+        // Store user ID check if needed, but session storage works locally
+
+        function toggleCart() {
+            // Close others
+            if (document.getElementById("ordersSidebar").classList.contains("open"))
+                toggleOrders();
+            if (
+                document.getElementById("reviewsSidebar").classList.contains("open")
+            )
+                toggleReviews();
+
+            const sidebar = document.getElementById("cartSidebar");
+            const overlay = document.getElementById("cartOverlay");
+            sidebar.classList.toggle("open");
+            overlay.classList.toggle("open");
+            if (sidebar.classList.contains("open")) {
+                renderCart();
+            }
+        }
+
+        function toggleOrders() {
+            // Close others
+            if (document.getElementById("cartSidebar").classList.contains("open"))
+                toggleCart();
+            if (
+                document.getElementById("reviewsSidebar").classList.contains("open")
+            )
+                toggleReviews();
+
+            const sidebar = document.getElementById("ordersSidebar");
+            const overlay = document.getElementById("cartOverlay");
+
+            if (!document.querySelector(".cart-sidebar.open")) {
+                overlay.classList.toggle("open");
+            } else if (sidebar.classList.contains("open")) {
+                // Closing this one, check if overlay needs to close (handled by general logic usually but let's be safe)
+                overlay.classList.remove("open");
+            } else {
+                overlay.classList.add("open");
+            }
+
+            sidebar.classList.toggle("open");
+            if (sidebar.classList.contains("open")) {
+                fetchOrders();
+            }
+        }
+
+        function toggleReviews() {
+            // Close others
+            if (document.getElementById("cartSidebar").classList.contains("open"))
+                toggleCart();
+            if (document.getElementById("ordersSidebar").classList.contains("open"))
+                toggleOrders();
+
+            const sidebar = document.getElementById("reviewsSidebar");
+            const overlay = document.getElementById("cartOverlay");
+
+            if (!document.querySelector(".cart-sidebar.open")) {
+                overlay.classList.toggle("open");
+            } else if (sidebar.classList.contains("open")) {
+                overlay.classList.remove("open");
+            } else {
+                overlay.classList.add("open");
+            }
+
+            sidebar.classList.toggle("open");
+            if (sidebar.classList.contains("open")) {
+                fetchReviews();
+            }
+        }
+
+        function toggleChat() {
+            // Close others
+            if (document.getElementById("cartSidebar").classList.contains("open"))
+                toggleCart();
+            if (document.getElementById("ordersSidebar").classList.contains("open"))
+                toggleOrders();
+            if (
+                document.getElementById("reviewsSidebar").classList.contains("open")
+            )
+                toggleReviews();
+
+            const sidebar = document.getElementById("chatSidebar");
+            const overlay = document.getElementById("cartOverlay");
+
+            if (!document.querySelector(".cart-sidebar.open")) {
+                overlay.classList.toggle("open");
+            } else if (sidebar.classList.contains("open")) {
+                overlay.classList.remove("open");
+            } else {
+                overlay.classList.add("open");
+            }
+
+            sidebar.classList.toggle("open");
+        }
+
+        // Chat Logic
+        function handleChatKey(e) {
+            if (e.key === "Enter") sendChatMessage();
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById("chatInput");
+            const budgetInput = document.getElementById("chatBudget");
+            let message = input.value.trim();
+            const budget = budgetInput.value.trim();
+
+            if (!message) return;
+
+            // Add Budget context if present
+            let finalMessage = message;
+            if (budget) {
+                finalMessage = `[User has a Weekly Budget of ₹${budget}] ` + message;
+            }
+
+            // Add User Message (Visual only shows message, or both? Let's just show message to keep it clean, or show budget tag)
+            // User just wants to see what they asked.
+            // addMessage(message, 'user');
+            let displayMessage = message;
+            if (budget) {
+                displayMessage = `💰 Budget: ₹${budget}\n${message}`;
+            }
+
+            addMessage(displayMessage, "user");
+
+            input.value = "";
+
+            // Show typing indicator or simplistic placeholder
+            const typingId = addMessage("Checking menu...", "bot");
+
+            try {
+                const response = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: finalMessage }),
+                });
+                const data = await response.json();
+
+                // Remove typing placeholder (simple way: remove last child or update)
+                document.getElementById("chatMessages").lastElementChild.remove();
+
+                if (data.success) {
+                    addMessage(data.reply, "bot");
+                } else {
+                    addMessage(
+                        "Sorry, I'm having trouble connecting right now.",
+                        "bot",
+                    );
+                }
+            } catch (err) {
+                document.getElementById("chatMessages").lastElementChild.remove();
+                addMessage("Network error. Please try again.", "bot");
+            }
+        }
+
+        function addMessage(text, sender) {
+            const container = document.getElementById("chatMessages");
+            const div = document.createElement("div");
+            div.className = `message ${sender}`;
+            // Convert newlines to breaks for bot responses
+            div.innerHTML = text.replace(/\n/g, "<br>");
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            return div;
+        }
+
+        // Handle Overlay Click for all
+        document.getElementById("cartOverlay").addEventListener("click", () => {
+            document
+                .querySelectorAll(".cart-sidebar.open")
+                .forEach((s) => s.classList.remove("open"));
+            document.getElementById("cartOverlay").classList.remove("open");
+        });
+
+        // Update Cart Icon Click to open sidebar
+        document.querySelector(".cart-icon").addEventListener("click", (e) => {
+            e.preventDefault();
+            toggleCart();
+        });
+
+        // Update Links Logic
+        document.addEventListener("DOMContentLoaded", () => {
+            const navLinks = document.querySelectorAll(".nav-links a");
+            navLinks.forEach((link) => {
+                if (link.innerText.includes("Orders")) {
+                    link.href = "#";
+                    link.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        toggleOrders();
+                    });
+                }
+                if (link.innerText.includes("Reviews")) {
+                    // If user adds this link later
+                    link.href = "#";
+                    link.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        toggleReviews();
+                    });
+                }
+            });
+
+            // Add Reviews Link Programmatically if not exists
+            const nav = document.querySelector(".nav-links");
+            if (nav && !nav.innerText.includes("Reviews")) {
+                const li = document.createElement("li");
+                const a = document.createElement("a");
+                a.href = "#";
+                a.innerText = "Reviews";
+                a.onclick = (e) => {
+                    e.preventDefault();
+                    toggleReviews();
+                };
+                li.appendChild(a);
+                nav.appendChild(li);
+            }
+        });
+
+        function fetchReviews() {
+            const container = document.getElementById("reviewsContainer");
+            container.innerHTML = '<p class="empty-msg">Loading reviews...</p>';
+
+            fetch("/api/reviews")
+                .then((res) => res.json())
+                .then((data) => {
+                    if (!data.success) {
+                        container.innerHTML =
+                            '<p class="empty-msg">Error loading reviews</p>';
+                        return;
+                    }
+
+                    let html = "";
+                    data.reviews.forEach((review) => {
+                        const stars = "⭐".repeat(review.rating);
+                        html += `
+                        <div class="sidebar-item" style="flex-direction: column; align-items: flex-start; gap: 0.2rem;">
+                            <div style="display:flex; justify-content:space-between; width:100%;">
+                                <strong>${review.username || "User"}</strong>
+                                <span style="font-size:0.8rem;">${stars}</span>
+                            </div>
+                            <p style="margin:0; color:#555; font-size: 0.9rem;">${review.comment}</p>
+                        </div>
+                     `;
+                    });
+                    container.innerHTML = html;
+                });
+        }
+
+        function submitReview() {
+            const rating = document.getElementById("reviewRating").value;
+            const comment = document.getElementById("reviewComment").value;
+
+            if (!comment) {
+                alert("Please write a comment!");
+                return;
+            }
+
+            fetch("/api/reviews", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rating, comment }),
+            })
+                .then((res) => res.json())
+                .then((data) => {
+                    if (data.success) {
+                        document.getElementById("reviewComment").value = "";
+                        fetchReviews(); // Reload
+                    } else {
+                        alert(data.message);
+                    }
+                });
+        }
+
+        function fetchOrders() {
+            const container = document.getElementById("ordersContainer");
+            container.innerHTML = '<p class="empty-msg">Loading...</p>';
+
+            fetch("/api/history")
+                .then((res) => res.json())
+                .then((data) => {
+                    if (!data.success) {
+                        container.innerHTML = `<p class="empty-msg">${data.message}</p>`;
+                        return;
+                    }
+                    if (data.orders.length === 0) {
+                        container.innerHTML = '<p class="empty-msg">No orders found</p>';
+                        return;
+                    }
+
+                    let html = "";
+                    data.orders.forEach((order) => {
+                        const date = new Date(order.created_at).toLocaleDateString();
+                        html += `
+                        <div class="sidebar-item" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+                            <div class="item-info" style="width: 100%;">
+                                <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem;">
+                                    <h4 style="color: var(--accent-red);">Order #${order.id}</h4>
+                                    <span class="price">₹${order.total_amount}</span>
+                                </div>
+                                <p style="font-size: 0.85rem; color: #666; margin: 0;">${order.ordered_items}</p>
+                            </div>
+                            <div class="item-controls" style="width: 100%; display: flex; justify-content: space-between; font-size: 0.8rem;">
+                                <span class="badge ${order.status.toLowerCase()}">${order.status}</span>
+                                <span style="color: #999;">${date}</span>
+                            </div>
+                        </div>
+                    `;
+                    });
+                    container.innerHTML = html;
+                })
+                .catch((err) => {
+                    console.error(err);
+                    container.innerHTML =
+                        '<p class="empty-msg">Failed to load orders</p>';
+                });
+        }
+
+        // Add to Cart Logic (Global)
+        function addToCart(id, name, price) {
+            let cart = JSON.parse(sessionStorage.getItem("cart")) || [];
+            let item = cart.find((i) => i.id == id);
+            if (item) {
+                item.quantity += 1;
+            } else {
+                cart.push({ id, name, price, quantity: 1 });
+            }
+            sessionStorage.setItem("cart", JSON.stringify(cart));
+            updateCartCount();
+
+            // Show feedback
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "Added!";
+            setTimeout(() => (btn.innerText = originalText), 1000);
+
+            // If cart is open, re-render
+            if (document.getElementById("cartSidebar").classList.contains("open")) {
+                renderCart();
+            }
+        }
+
+        function updateCartCount() {
+            let cart = JSON.parse(sessionStorage.getItem("cart")) || [];
+            let count = cart.reduce((acc, item) => acc + item.quantity, 0);
+            const badge = document.querySelector(".cart-count");
+            if (badge) badge.innerText = count;
+        }
+
+        function renderCart() {
+            const container = document.getElementById("cartItemsContainer");
+            const totalDisplay = document.getElementById("cartTotalDisplay");
+            let cart = JSON.parse(sessionStorage.getItem("cart")) || [];
+
+            if (cart.length === 0) {
+                container.innerHTML = '<p class="empty-msg">Your cart is empty</p>';
+                totalDisplay.innerText = "₹0";
+                return;
+            }
+
+            let html = "";
+            let total = 0;
+
+            cart.forEach((item, index) => {
+                total += item.price * item.quantity;
+                html += `
+                    <div class="sidebar-item">
+                        <div class="item-info">
+                            <h4>${item.name}</h4>
+                            <span class="price">₹${item.price} x ${item.quantity}</span>
+                        </div>
+                        <div class="item-controls">
+                            <span class="remove-btn" onclick="removeFromCart(${index})">Remove</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            totalDisplay.innerText = "₹" + total;
+        }
+
+        function removeFromCart(index) {
+            let cart = JSON.parse(sessionStorage.getItem("cart")) || [];
+            cart.splice(index, 1);
+            sessionStorage.setItem("cart", JSON.stringify(cart));
+            renderCart();
+            updateCartCount();
+        }
+
+        // Checkout function using Fetch API
+        function checkout(type) {
+            let cart = JSON.parse(sessionStorage.getItem("cart")) || [];
+            if (cart.length === 0) {
+                alert("Cart is empty!");
+                return;
+            }
+
+            fetch("/checkout", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    type: type,
+                    items: cart,
+                }),
+            })
+                .then((response) => response.json())
+                .then((data) => {
+                    if (data.success) {
+                        alert(data.message);
+                        sessionStorage.removeItem("cart");
+                        updateCartCount();
+                        renderCart();
+                        toggleCart();
+                        window.location.href = "/history";
+                    } else {
+                        alert("Error: " + data.message);
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error:", error);
+                    alert("An error occurred during checkout.");
+                });
+        }
+
+        window.addEventListener("load", updateCartCount);
+    </script>
+</body>
+
+</html>
